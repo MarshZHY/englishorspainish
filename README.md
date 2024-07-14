@@ -1,5 +1,5 @@
 # englishorspainish
-# Motion Detection Tinder Bot
+# English or Spainish!!!!!!!!!!!!!
 
 This project integrates motion detection using OpenCV with automated actions on Tinder using Selenium and Chrome WebDriver. When motion is detected, it sends commands to like or unlike profiles on Tinder.
 
