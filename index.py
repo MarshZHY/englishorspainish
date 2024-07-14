@@ -31,7 +31,7 @@ def start_cooldown_timer(queue):
 def reset_cooldown(queue):
     global cooldown_active
     cooldown_active = False
-    signal(queue, "unlike")
+    signal(queue, "like")
 
 def sound_player(sound_queue):
     pygame.init()
