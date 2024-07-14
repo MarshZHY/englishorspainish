@@ -5,13 +5,7 @@ from multiprocessing import Queue, Process
 import pygame
 import threading
 from modules.tinder import unlike, like
-"""
-Note run this cmd on terminal for openned chrome for webdrifver
 
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9999
-
-
-"""
 def start_tinder_script(queue):
     while True:
         command = queue.get()
@@ -23,21 +17,12 @@ def start_tinder_script(queue):
 def signal(queue, command):
     queue.put(command)
 
-def on_motion_detected(queue):
+def on_motion_detected(queue, sound_queue, display_queue):
     print("apply signal notation sigmoid LLM Disturbminate")
-    #play_lose_audio()
+    sound_queue.put("play_lose_audio")
+    display_queue.put("show_danger_message")
+    display_queue.put("change_color_red")
     start_cooldown_timer(queue)
-
-def play_audio():
-    pygame.mixer.music.load("modules/EOS.mp3")
-    pygame.mixer.music.play(-1)
-
-def stop_audio():
-    pygame.mixer.music.stop()
-
-def play_lose_audio():
-    pygame.mixer.music.load("modules/LOSE.mp3")
-    pygame.mixer.music.play()
 
 def start_cooldown_timer(queue):
     cooldown_thread = threading.Timer(2, reset_cooldown, [queue])
@@ -46,16 +31,61 @@ def start_cooldown_timer(queue):
 def reset_cooldown(queue):
     global cooldown_active
     cooldown_active = False
-    signal(queue, "like")
+    signal(queue, "unlike")
 
-def main():
-    global cooldown_active
-    queue = Queue()
-    tinder_process = Process(target=start_tinder_script, args=(queue,))
-    tinder_process.start()
-
+def sound_player(sound_queue):
     pygame.init()
     pygame.mixer.init()
+    
+    eos_sound = pygame.mixer.Sound("modules/EOS.mp3")
+    lose_sound = pygame.mixer.Sound("modules/LOSE.mp3")
+
+    while True:
+        command = sound_queue.get()
+        if command == "play_eos_audio":
+            eos_sound.play(loops=-1)
+        elif command == "stop_eos_audio":
+            eos_sound.stop()
+        elif command == "play_lose_audio":
+            lose_sound.play()
+
+def display_message(display_queue):
+    global danger_message, color_red
+    danger_message = False
+    color_red = False
+
+    def hide_danger_message():
+        global danger_message
+        danger_message = False
+
+    def reset_color():
+        global color_red
+        color_red = False
+
+    while True:
+        command = display_queue.get()
+        if command == "show_danger_message":
+            danger_message = True
+            timer = threading.Timer(1, hide_danger_message)
+            timer.start()
+        elif command == "change_color_red":
+            color_red = True
+            timer = threading.Timer(1, reset_color)
+            timer.start()
+
+def main():
+    global cooldown_active, danger_message, color_red
+    queue = Queue()
+    sound_queue = Queue()
+    display_queue = Queue()
+    tinder_process = Process(target=start_tinder_script, args=(queue,))
+    tinder_process.start()
+    
+    sound_thread = threading.Thread(target=sound_player, args=(sound_queue,))
+    sound_thread.start()
+
+    display_thread = threading.Thread(target=display_message, args=(display_queue,))
+    display_thread.start()
 
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 500)
@@ -66,12 +96,11 @@ def main():
     prev_position = None
     position_buffer = []
     buffer_size = 5
-    movement_threshold = 1
-    min_face_size = (100, 100)
+    movement_threshold = 1.5
+    min_face_size = (150, 150)
     start_time = None
     duration = 0
     cooldown_active = False
-    last_motion_time = time.time()
 
     audio_playing = False
 
@@ -95,12 +124,12 @@ def main():
             if prev_position is not None:
                 distance = np.linalg.norm(avg_position - prev_position)
                 if distance > movement_threshold and not cooldown_active:
-                    on_motion_detected(queue)
+                    on_motion_detected(queue, sound_queue, display_queue)
                     cooldown_active = True
                     movement_detected = True
                     start_time = None
 
-            color = (0, 0, 255) if movement_detected else (0, 255, 0)
+            color = (0, 0, 255) if color_red else (0, 255, 0)
             if not movement_detected and start_time is None:
                 start_time = time.time()
             if not movement_detected:
@@ -113,16 +142,16 @@ def main():
             start_time = None
             duration = 0
             if audio_playing:
-                stop_audio()
+                sound_queue.put("stop_eos_audio")
                 audio_playing = False
 
         if movement_detected:
             if audio_playing:
-                stop_audio()
+                sound_queue.put("stop_eos_audio")
                 audio_playing = False
         else:
             if not audio_playing:
-                play_audio()
+                sound_queue.put("play_eos_audio")
                 audio_playing = True
 
         text = "English or Spanish"
@@ -133,6 +162,13 @@ def main():
         text_x = (frame.shape[1] - text_size[0]) // 2
         text_y = text_size[1] + 30
         cv2.putText(frame, text, (text_x, text_y), font, font_scale, (0, 0, 255), thickness)
+
+        if danger_message:
+            danger_text = "GAY"
+            danger_text_size = cv2.getTextSize(danger_text, font, font_scale, thickness)[0]
+            danger_text_x = (frame.shape[1] - danger_text_size[0]) // 2
+            danger_text_y = (frame.shape[0] + danger_text_size[1]) // 2
+            cv2.putText(frame, danger_text, (danger_text_x, danger_text_y), font, font_scale, (0, 0, 255), thickness)
 
         timer_text = f"Time: {duration:.2f} sec"
         timer_font_scale = 1
@@ -151,6 +187,9 @@ def main():
     cap.release()
     cv2.destroyAllWindows()
     tinder_process.terminate()
+    sound_queue.put("stop_eos_audio")
+    sound_thread.join()
+    display_thread.join()
 
 if __name__ == "__main__":
     main()
